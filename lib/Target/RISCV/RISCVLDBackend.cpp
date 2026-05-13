@@ -75,12 +75,11 @@ Relocation::Address RISCVLDBackend::getSymbolValuePLT(const Relocation &R) {
   return getRelocator()->getSymValue(&R);
 }
 
-Relocation::Address RISCVLDBackend::getSymbolValuePLT(const ResolveInfo &Sym) {
-  ResolveInfo *MutableSym = const_cast<ResolveInfo *>(&Sym);
-  if (MutableSym->reserved() & Relocator::ReservePLT) {
-    if (const Fragment *S = findEntryInPLT(MutableSym))
+Relocation::Address RISCVLDBackend::getSymbolValuePLT(ResolveInfo &Sym) {
+  if (Sym.reserved() & Relocator::ReservePLT) {
+    if (const Fragment *S = findEntryInPLT(&Sym))
       return S->getAddr(config().getDiagEngine());
-    if (const ResolveInfo *S = findAbsolutePLT(MutableSym))
+    if (const ResolveInfo *S = findAbsolutePLT(&Sym))
       return S->value();
   }
 
@@ -1128,14 +1127,15 @@ void RISCVLDBackend::translatePseudoRelocation(Relocation *reloc) {
 }
 
 enum RelaxationPass {
-  RELAXATION_TABLE_JUMP, // Must start at zero.
-  RELAXATION_CALL,
+  RELAXATION_CALL, // Must start at zero.
   RELAXATION_PC,
   RELAXATION_LUI,
   RELAXATION_TLSDESC,
   RELAXATION_ALIGN,
   RELAXATION_PASS_COUNT, // Number of passes
 };
+
+void RISCVLDBackend::preRelaxation() { initTableJump(); }
 
 void RISCVLDBackend::mayBeRelax(int relaxation_pass, bool &pFinished) {
   pFinished = true;
@@ -1149,12 +1149,6 @@ void RISCVLDBackend::mayBeRelax(int relaxation_pass, bool &pFinished) {
   // again in the outer loop. Therefore, this function may be entered once more,
   // for no good reason.
   if (relaxation_pass >= RELAXATION_PASS_COUNT) {
-    return;
-  }
-
-  if (relaxation_pass == RELAXATION_TABLE_JUMP) {
-    initTableJump();
-    pFinished = false;
     return;
   }
 

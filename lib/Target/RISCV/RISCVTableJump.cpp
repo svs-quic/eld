@@ -14,7 +14,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MathExtras.h"
-#include <cstring>
+#include <cassert>
 
 using namespace eld;
 
@@ -29,7 +29,6 @@ eld::Expected<void> RISCVTableJumpFragment::emit(MemoryRegion &Mr, Module &M) {
   if (size() == 0)
     return {};
   uint8_t *Buf = Mr.begin() + getOffset(M.getConfig().getDiagEngine());
-  memset(Buf, 0, size());
   writeTo(Buf);
   return {};
 }
@@ -50,12 +49,11 @@ static int64_t getCallDisplace(RISCVLDBackend &Backend, const Relocation &R) {
 
 static uint64_t getTableJumpTargetVA(RISCVLDBackend &Backend,
                                      const ResolveInfo *Sym) {
-  return Backend.getSymbolValuePLT(*Sym);
+  return Backend.getSymbolValuePLT(const_cast<ResolveInfo &>(*Sym));
 }
 
 void RISCVTableJumpFragment::scanTableJumpEntries(ELFSection &Sec) {
-  if (!Sec.isCode())
-    return;
+  assert(Sec.isCode() && "table jump scan expects a code section");
 
   auto RelocRange = Sec.getRelocations();
   llvm::SmallVector<const Relocation *, 0> Relocs(RelocRange.begin(),
@@ -165,7 +163,7 @@ void RISCVTableJumpFragment::finalizeContents() {
   if (!CMJALTCandidates.empty() && SavedBoth < SavedCMJTOnly)
     CMJALTCandidates.clear();
 
-  if (SavedCMJTOnly <= 0) {
+  if (SavedCMJTOnly < 0) {
     CMJTCandidates.clear();
     CMJALTCandidates.clear();
   }

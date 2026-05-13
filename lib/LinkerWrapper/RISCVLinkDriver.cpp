@@ -143,6 +143,11 @@ RISCVLinkDriver::parseOptions(ArrayRef<const char *> Args,
   Config.options().setRISCVRelaxTbljal(
       ArgList.hasFlag(OPT_RISCVLinkOptTable::relax_tbljal,
                       OPT_RISCVLinkOptTable::no_relax_tbljal, false));
+  if (Config.options().getRISCVRelaxTbljal() &&
+      ArgList.getLastArg(OPT_RISCVLinkOptTable::shared)) {
+    Config.raise(Diag::warn_incompatible_option) << "relax-tbljal" << "shared";
+    Config.options().setRISCVRelaxTbljal(false);
+  }
 
   // --enable-bss-mixing
   if (ArgList.hasArg(OPT_RISCVLinkOptTable::enable_bss_mixing))
@@ -251,6 +256,7 @@ template <class T>
 bool RISCVLinkDriver::processOptions(llvm::opt::InputArgList &Args) {
   if (!GnuLdDriver::processOptions<T>(Args))
     return false;
+
   // FIXME : remove duplicate code
   if (Config.options().isPatchEnable()) {
     if (Config.options().getStripSymbolMode() ==
