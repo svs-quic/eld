@@ -23,6 +23,7 @@
 #include "eld/Readers/ELFSection.h"
 #include "eld/Readers/SymDefReader.h"
 #include "eld/Script/Assignment.h"
+#include "eld/Script/Expression.h"
 #include "eld/Script/VersionScript.h"
 #include "eld/SymbolResolver/ResolveInfo.h"
 #include "eld/Target/ELFSegment.h"
@@ -477,7 +478,7 @@ public:
 
   bool assignOffsets(uint64_t Offset);
 
-  void evaluateAssignments(OutputSectionEntry *output, uint32_t &atIndex);
+  void evaluateAssignments(OutputSectionEntry *output);
 
   void evaluateAssignmentsAtEndOfOutputSection(OutputSectionEntry *output);
 
@@ -906,6 +907,17 @@ public:
   }
 #endif
 
+  const Assignment *getLatestAssignment(llvm::StringRef SymName) {
+    auto it = SymbolNameToLatestAssignment.find(SymName);
+    if (it != SymbolNameToLatestAssignment.end())
+      return it->getValue();
+    return nullptr;
+  }
+
+  void updateLatestAssignment(llvm::StringRef SymName, const Assignment *A) {
+    SymbolNameToLatestAssignment[SymName] = A;
+  }
+
 protected:
   virtual int numReservedSegments() const { return m_NumReservedSegments; }
 
@@ -975,13 +987,6 @@ private:
   void addFileHeaderToLayout();
 
   void addProgramHeaderToLayout();
-
-  bool TryToPlaceAtSection(RuleContainer *In, Fragment *Frag,
-                           ELFSection *Section, uint32_t Index);
-
-  bool InsertAtSectionToEnd(ELFSection *OutSection, uint64_t &Offset,
-                            RuleContainer *CurRule, RuleContainer *NextRule,
-                            Expression *Fill, uint32_t Index);
 
   // ----------------------Handle Assert --------------------------
   void evaluateAsserts();
@@ -1168,9 +1173,6 @@ protected:
   ELFSection *m_pBuildIDSection = nullptr;
   BuildIDFragment *m_pBuildIDFragment = nullptr;
 
-  // At Table.
-  uint32_t m_AtTableIndex = 0;
-
   // Start Offset.
   int64_t m_StartOffset = 0;
 
@@ -1234,6 +1236,8 @@ protected:
   GNUVerNeedFragment *GNUVerNeedFrag = nullptr;
   std::unordered_map<const ResolveInfo *, uint16_t> OutputVersionIDs;
 #endif
+
+  llvm::StringMap<const Assignment *> SymbolNameToLatestAssignment;
 };
 
 } // namespace eld
