@@ -29,6 +29,7 @@ eld::Expected<void> RISCVTableJumpFragment::emit(MemoryRegion &Mr, Module &M) {
   if (size() == 0)
     return {};
   uint8_t *Buf = Mr.begin() + getOffset(M.getConfig().getDiagEngine());
+  memset(Buf, 0, size());
   writeTo(Buf);
   return {};
 }
