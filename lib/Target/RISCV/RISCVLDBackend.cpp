@@ -318,8 +318,9 @@ void RISCVLDBackend::reportMissedRelaxation(StringRef Name,
 
 // Select the matching JVT entry lookup for rd (x0 -> cm.jt, x1 -> cm.jalt).
 // Returns the table entry index, or -1 when this relocation is not eligible.
-static int getTableJumpEntryIndex(const RISCVTableJumpFragment &TableJumpFragment,
-                                  const ResolveInfo *Sym, unsigned Rd) {
+static int
+getTableJumpEntryIndex(const RISCVTableJumpFragment &TableJumpFragment,
+                       const ResolveInfo *Sym, unsigned Rd) {
   if (Rd == 0)
     return TableJumpFragment.getCMJTEntryIndex(Sym);
   if (Rd == 1)
@@ -327,8 +328,9 @@ static int getTableJumpEntryIndex(const RISCVTableJumpFragment &TableJumpFragmen
   return -1;
 }
 
-static void applyTableJumpRelaxation(Relocation *Reloc, RegionFragmentEx &Region,
-                                     uint64_t Offset, unsigned EntryIndex) {
+static void applyTableJumpRelaxation(Relocation *Reloc,
+                                     RegionFragmentEx &Region, uint64_t Offset,
+                                     unsigned EntryIndex) {
   uint16_t TblJump = static_cast<uint16_t>(0xA002 | (EntryIndex << 2));
   Region.replaceInstruction(Offset, Reloc,
                             reinterpret_cast<uint8_t *>(&TblJump), 2);
