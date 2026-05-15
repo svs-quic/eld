@@ -166,6 +166,7 @@ void RISCVLDBackend::initTargetSymbols() {
     return;
 
   if (TableJumpFragment) {
+    // The __jvt_base$ symbol contains the Zcmt jump table base address.
     std::string JvtName = "__jvt_base$";
     LDSymbol *JvtBase =
         m_Module.getIRBuilder()
@@ -315,6 +316,26 @@ void RISCVLDBackend::reportMissedRelaxation(StringRef Name,
   recordRelaxationStats(Section, 0, NumBytes);
 }
 
+// Select the matching JVT entry lookup for rd (x0 -> cm.jt, x1 -> cm.jalt).
+// Returns the table entry index, or -1 when this relocation is not eligible.
+static int getTableJumpEntryIndex(const RISCVTableJumpFragment &TableJumpFragment,
+                                  const ResolveInfo *Sym, unsigned Rd) {
+  if (Rd == 0)
+    return TableJumpFragment.getCMJTEntryIndex(Sym);
+  if (Rd == 1)
+    return TableJumpFragment.getCMJALTEntryIndex(Sym);
+  return -1;
+}
+
+static void applyTableJumpRelaxation(Relocation *Reloc, RegionFragmentEx &Region,
+                                     uint64_t Offset, unsigned EntryIndex) {
+  uint16_t TblJump = static_cast<uint16_t>(0xA002 | (EntryIndex << 2));
+  Region.replaceInstruction(Offset, Reloc,
+                            reinterpret_cast<uint8_t *>(&TblJump), 2);
+  Reloc->setTargetData(TblJump);
+  Reloc->setType(eld::ELF::riscv::internal::R_RISCV_TBJAL);
+}
+
 bool RISCVLDBackend::doRelaxationCall(Relocation *reloc) {
   /* Three similar relaxations can be applied here, in order of preference:
    * -- auipc;jalr -> c.j/c.jal (saves 6 bytes)
@@ -415,18 +436,12 @@ bool RISCVLDBackend::doRelaxationCall(Relocation *reloc) {
   }
 
   if (config().options().getRISCVRelaxTbljal() && TableJumpFragment &&
-      TableJumpFragment->size() != 0) {
-    int EntryIndex = -1;
-    if (rd == 0)
-      EntryIndex = TableJumpFragment->getCMJTEntryIndex(reloc->symInfo());
-    else if (rd == 1)
-      EntryIndex = TableJumpFragment->getCMJALTEntryIndex(reloc->symInfo());
+      TableJumpFragment->size()) {
+    int EntryIndex =
+        getTableJumpEntryIndex(*TableJumpFragment, reloc->symInfo(), rd);
     if (EntryIndex >= 0) {
-      uint16_t TblJump = static_cast<uint16_t>(0xA002 | (EntryIndex << 2));
-      region->replaceInstruction(offset, reloc,
-                                 reinterpret_cast<uint8_t *>(&TblJump), 2);
-      reloc->setTargetData(TblJump);
-      reloc->setType(ELF::riscv::internal::R_RISCV_TBJAL);
+      applyTableJumpRelaxation(reloc, *region, offset,
+                               static_cast<unsigned>(EntryIndex));
       relaxDeleteBytes("RISCV_TBJAL", *region, offset + 2, 6,
                        reloc->symInfo()->name());
       return true;
@@ -473,7 +488,7 @@ bool RISCVLDBackend::doRelaxationCall(Relocation *reloc) {
 
 bool RISCVLDBackend::doRelaxationJal(Relocation *reloc) {
   if (!config().options().getRISCVRelaxTbljal() || !TableJumpFragment ||
-      TableJumpFragment->size() == 0)
+      !TableJumpFragment->size())
     return false;
 
   Fragment *frag = reloc->targetRef()->frag();
@@ -486,19 +501,13 @@ bool RISCVLDBackend::doRelaxationJal(Relocation *reloc) {
   reloc->targetRef()->memcpy(&Jal, sizeof(Jal), 0);
   unsigned rd = (Jal >> 7) & 0x1fu;
 
-  int EntryIndex = -1;
-  if (rd == 0)
-    EntryIndex = TableJumpFragment->getCMJTEntryIndex(reloc->symInfo());
-  else if (rd == 1)
-    EntryIndex = TableJumpFragment->getCMJALTEntryIndex(reloc->symInfo());
+  int EntryIndex =
+      getTableJumpEntryIndex(*TableJumpFragment, reloc->symInfo(), rd);
   if (EntryIndex < 0)
     return false;
 
-  uint16_t TblJump = static_cast<uint16_t>(0xA002 | (EntryIndex << 2));
-  region->replaceInstruction(offset, reloc,
-                             reinterpret_cast<uint8_t *>(&TblJump), 2);
-  reloc->setTargetData(TblJump);
-  reloc->setType(ELF::riscv::internal::R_RISCV_TBJAL);
+  applyTableJumpRelaxation(reloc, *region, offset,
+                           static_cast<unsigned>(EntryIndex));
   relaxDeleteBytes("RISCV_TBJAL", *region, offset + 2, 2,
                    reloc->symInfo()->name());
   return true;
@@ -1135,7 +1144,11 @@ enum RelaxationPass {
   RELAXATION_PASS_COUNT, // Number of passes
 };
 
-void RISCVLDBackend::preRelaxation() { initTableJump(); }
+void RISCVLDBackend::preRelaxation() {
+  // Table-jump candidates require full relocation/symbol state, so defer this
+  // initialization until just before the relaxation pass.
+  initTableJump();
+}
 
 void RISCVLDBackend::mayBeRelax(int relaxation_pass, bool &pFinished) {
   pFinished = true;

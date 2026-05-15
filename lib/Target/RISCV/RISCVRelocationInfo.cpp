@@ -700,6 +700,8 @@ RISCVRelocationMap RISCVRelocs = {
     {eld::ELF::riscv::internal::R_RISCV_TBJAL,
      {/*.Name = */ "R_RISCV_TBJAL",
       /*.Type = */ eld::ELF::riscv::internal::R_RISCV_TBJAL,
+      // The relaxation pass writes the final 16-bit cm.jt/cm.jalt encoding.
+      // This relocation is then applyNone, so no bitfield encoding is needed.
       /*EncodingType = */ EncTy_None,
       /*.Alignment = */ 2,
       /*.shift = */ 0,
